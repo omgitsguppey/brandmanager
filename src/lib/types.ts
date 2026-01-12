@@ -29,3 +29,5 @@ export type Memory = {
   createdAt: any;
   updatedAt: any;
 };
+
+    
