@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 
 import { type Asset } from '@/lib/types';
-import { ShieldCheck, UserCheck, Tag as TagIcon, Sparkles, Upload, AlertCircle, CheckCircle2, Heart, Info, SlidersHorizontal, ShareUp, Trash2, Cloud, MapPin } from 'lucide-react';
+import { ShieldCheck, UserCheck, Tag as TagIcon, Sparkles, Upload, AlertCircle, CheckCircle2, Heart, Info, SlidersHorizontal, Share, Trash2, Cloud, MapPin } from 'lucide-react';
 import { runCheckImageSafety, runAutoTagImage, runBrandFaceAudit } from '@/app/actions/ai';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -295,7 +295,7 @@ function AssetDetailDialog({ asset, user, onClose }: AssetDetailProps) {
 
           <div className="flex items-center justify-between p-4 border-t">
             <Button variant="ghost" size="icon" onClick={() => setShowSharePlaceholder(true)}>
-              <ShareUp />
+              <Share />
             </Button>
             <div className="flex items-center gap-2 bg-muted p-1 rounded-full">
               <Button variant={activePanel === 'info' ? 'secondary' : 'ghost'} size="icon" className="rounded-full" onClick={() => setActivePanel('info')}>
