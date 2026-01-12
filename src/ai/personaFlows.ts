@@ -5,11 +5,13 @@ import { defineFirestoreRetriever } from '@genkit-ai/firebase';
 import * as admin from 'firebase-admin';
 import { z } from 'zod';
 import { backupModel, embeddingModel, primaryModel } from './genkit';
+import { ImageAnnotatorClient } from '@google-cloud/vision';
 
 if (!admin.apps.length) {
   admin.initializeApp();
 }
 const db = admin.firestore();
+const visionClient = new ImageAnnotatorClient();
 
 // Custom personaStore implementation using Genkit 1.x patterns
 const personaRetriever = defineFirestoreRetriever(ai, {
@@ -50,6 +52,88 @@ const personaStore = {
     return result.map(doc => ({ content: doc.text }));
   },
 };
+
+export const brandFaceAudit = ai.defineFlow(
+  { 
+    name: 'brandFaceAudit', 
+    inputSchema: z.object({ url: z.string(), brandId: z.string() }),
+    outputSchema: z.any() 
+  },
+  async (input) => {
+    // Step 1: Execute Cloud Vision to get raw biometric data
+    const [result] = await visionClient.faceDetection(input.url);
+    const face = result.faceAnnotations?.[0];
+
+    // Step 2: Agentic Reasoning with Gemini 2.5 Flash-Lite
+    const audit = await ai.generate({
+      model: 'googleai/gemini-2.5-flash-lite',
+      prompt: [
+        { text: `
+          Analyze this model's face for Brand ID: ${input.brandId}.
+          Raw Metrics from Vision API: 
+          - Joy: ${face?.joyLikelihood}
+          - Sorrow: ${face?.sorrowLikelihood}
+          - Headwear: ${face?.headwearLikelihood}
+
+          Does this person's expression align with our brand persona?
+          Return a JSON object with:
+          {
+            "isAligned": boolean,
+            "reason": string,
+            "sentiment": string,
+            "metrics": { "joy": string, "sorrow": string }
+          }
+        `},
+        { media: { url: input.url } }
+      ],
+      config: { 
+        // @ts-ignore - budget might be experimental
+        thinkingBudget: 1024 
+      }
+    });
+
+    return audit.output;
+  }
+);
+
+export const checkImageSafety = ai.defineFlow(
+  {
+    name: 'checkImageSafety',
+    inputSchema: z.object({ base64: z.string(), mimeType: z.string() }),
+    outputSchema: z.object({
+      isSafe: z.boolean(),
+      reason: z.string().optional(),
+    })
+  },
+  async (input) => {
+    const response = await ai.generate({
+      model: 'googleai/gemini-2.5-flash-lite',
+      prompt: [
+        { text: 'Analyze this image for NSFW content (nudity, violence, or hate). Return JSON: { "isSafe": boolean, "reason": string }.' },
+        { media: { url: `data:${input.mimeType};base64,${input.base64}` } }
+      ]
+    });
+    return response.output as { isSafe: boolean, reason?: string };
+  }
+);
+
+export const autoTagImage = ai.defineFlow(
+  {
+    name: 'autoTagImage',
+    inputSchema: z.object({ url: z.string() }),
+    outputSchema: z.object({ tags: z.array(z.string()) })
+  },
+  async (input) => {
+    const response = await ai.generate({
+      model: 'googleai/gemini-2.5-flash-lite',
+      prompt: [
+        { text: 'Generate 5 descriptive tags for this image. Return JSON: { "tags": ["tag1", "tag2", ...] }.' },
+        { media: { url: input.url } }
+      ]
+    });
+    return response.output as { tags: string[] };
+  }
+);
 
 const trainPersonaFlowInput = z.object({
   brandId: z.string(),
