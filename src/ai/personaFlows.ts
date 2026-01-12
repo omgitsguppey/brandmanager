@@ -11,7 +11,14 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 const db = admin.firestore();
-const visionClient = new ImageAnnotatorClient();
+
+// Only initialize Vision Client if strictly needed, and handle missing creds gracefully
+let visionClient: ImageAnnotatorClient | null = null;
+try {
+  visionClient = new ImageAnnotatorClient();
+} catch (e) {
+  console.warn('Google Cloud Vision Client could not be initialized. Visual audits may fail.', e);
+}
 
 // Custom personaStore implementation using Genkit 1.x patterns
 const personaRetriever = defineFirestoreRetriever(ai, {
@@ -26,21 +33,31 @@ const personaRetriever = defineFirestoreRetriever(ai, {
 
 const personaStore = {
   add: async (items: any[]) => {
+    console.log('personaStore.add: Starting embedding...');
     const batch = db.batch();
     for (const item of items) {
-      const embeddings = await ai.embed({
-        embedder: embeddingModel,
-        content: item.content,
-      });
-      const docRef = db.collection('brand_persona_examples').doc();
-      batch.set(docRef, {
-        ...item,
-        embedding: embeddings[0].embedding,
-      });
+      try {
+        const embeddings = await ai.embed({
+          embedder: embeddingModel,
+          content: item.content,
+        });
+        console.log('personaStore.add: Embedding generated.');
+        const docRef = db.collection('brand_persona_examples').doc();
+        batch.set(docRef, {
+          ...item,
+          embedding: embeddings[0].embedding,
+        });
+      } catch (err) {
+        console.error('personaStore.add: Error generating embedding', err);
+        throw err;
+      }
     }
+    console.log('personaStore.add: Committing batch...');
     await batch.commit();
+    console.log('personaStore.add: Batch committed.');
   },
   retrieve: async (params: { content: string; k?: number; filter?: any }) => {
+    console.log('personaStore.retrieve: Retrieving...', params);
     const result = await ai.retrieve({
       retriever: personaRetriever,
       query: params.content,
@@ -49,17 +66,21 @@ const personaStore = {
         where: params.filter?.where === 'metadata.brandId' ? { brandId: params.filter.value } : undefined,
       },
     });
+    console.log('personaStore.retrieve: Found docs', result.length);
     return result.map(doc => ({ content: doc.text }));
   },
 };
 
-export const brandFaceAudit = ai.defineFlow(
+// --- INTERNAL FLOW DEFINITIONS ---
+
+const brandFaceAuditDef = ai.defineFlow(
   { 
     name: 'brandFaceAudit', 
     inputSchema: z.object({ url: z.string(), brandId: z.string() }),
     outputSchema: z.any() 
   },
   async (input) => {
+    if (!visionClient) throw new Error("Vision Client not available");
     // Step 1: Execute Cloud Vision to get raw biometric data
     const [result] = await visionClient.faceDetection(input.url);
     const face = result.faceAnnotations?.[0];
@@ -87,7 +108,7 @@ export const brandFaceAudit = ai.defineFlow(
         { media: { url: input.url } }
       ],
       config: { 
-        // @ts-ignore - budget might be experimental
+         // @ts-ignore
         thinkingBudget: 1024 
       }
     });
@@ -96,7 +117,7 @@ export const brandFaceAudit = ai.defineFlow(
   }
 );
 
-export const checkImageSafety = ai.defineFlow(
+const checkImageSafetyDef = ai.defineFlow(
   {
     name: 'checkImageSafety',
     inputSchema: z.object({ base64: z.string(), mimeType: z.string() }),
@@ -117,7 +138,7 @@ export const checkImageSafety = ai.defineFlow(
   }
 );
 
-export const autoTagImage = ai.defineFlow(
+const autoTagImageDef = ai.defineFlow(
   {
     name: 'autoTagImage',
     inputSchema: z.object({ url: z.string() }),
@@ -132,35 +153,6 @@ export const autoTagImage = ai.defineFlow(
       ]
     });
     return response.output as { tags: string[] };
-  }
-);
-
-const trainPersonaFlowInput = z.object({
-  brandId: z.string(),
-  captionText: z.string(),
-  platforms: z.array(z.string()),
-});
-
-export const trainPersonaFlow = ai.defineFlow(
-  {
-    name: 'trainPersonaFlow',
-    inputSchema: trainPersonaFlowInput,
-    outputSchema: z.object({ success: z.boolean() }),
-  },
-  async (input) => {
-    await personaStore.add([
-      {
-        content: input.captionText,
-        brandId: input.brandId,
-        platforms: input.platforms,
-        source: 'manual_input',
-      },
-    ]);
-
-    const brandRef = db.collection('brands').doc(input.brandId);
-    await brandRef.update({ personaConfidence: admin.firestore.FieldValue.increment(5) });
-
-    return { success: true };
   }
 );
 
@@ -194,27 +186,28 @@ const captionPrompt = ai.definePrompt(
   }
 );
 
-const generateCaptionFlowInput = z.object({
-  brandId: z.string(),
-  userPrompt: z.string(),
-  platforms: z.array(z.string()),
-});
-
-export const generateCaptionFlow = ai.defineFlow(
+const generateCaptionFlowDef = ai.defineFlow(
   {
     name: 'generateCaptionFlow',
-    inputSchema: generateCaptionFlowInput,
+    inputSchema: z.object({
+        brandId: z.string(),
+        userPrompt: z.string(),
+        platforms: z.array(z.string()),
+    }),
     outputSchema: z.object({ captions: z.array(z.string()) }),
   },
   async (input) => {
+    console.log('generateCaptionFlow: Retrieving examples...');
     const similarDocs = await personaStore.retrieve({
       content: input.userPrompt,
       k: 3,
       filter: { where: 'metadata.brandId', value: input.brandId },
     });
+    console.log('generateCaptionFlow: Examples retrieved:', similarDocs.length);
 
     const examples = similarDocs.map((doc: any) => doc.content).join('\n---\n');
 
+    console.log('generateCaptionFlow: Generating prompt...');
     const result = await captionPrompt({
       platforms: input.platforms,
       examples: examples,
@@ -225,17 +218,15 @@ export const generateCaptionFlow = ai.defineFlow(
   }
 );
 
-const recordFeedbackFlowInput = z.object({
-  brandId: z.string(),
-  captionText: z.string(),
-  platforms: z.array(z.string()),
-  feedback: z.enum(['positive', 'negative']),
-});
-
-export const recordFeedbackFlow = ai.defineFlow(
+const recordFeedbackFlowDef = ai.defineFlow(
   {
     name: 'recordFeedbackFlow',
-    inputSchema: recordFeedbackFlowInput,
+    inputSchema: z.object({
+        brandId: z.string(),
+        captionText: z.string(),
+        platforms: z.array(z.string()),
+        feedback: z.enum(['positive', 'negative']),
+    }),
     outputSchema: z.object({ success: z.boolean() }),
   },
   async (input) => {
@@ -258,3 +249,83 @@ export const recordFeedbackFlow = ai.defineFlow(
     return { success: true };
   }
 );
+
+const trainPersonaFlowDef = ai.defineFlow(
+    {
+      name: 'trainPersonaFlow',
+      inputSchema: z.object({
+        brandId: z.string(),
+        captionText: z.string(),
+        platforms: z.array(z.string()),
+      }),
+      outputSchema: z.object({ success: z.boolean() }),
+    },
+    async (input) => {
+      console.log('trainPersonaFlow: Adding to store...');
+      await personaStore.add([
+        {
+          content: input.captionText,
+          brandId: input.brandId,
+          platforms: input.platforms,
+          source: 'manual_input',
+        },
+      ]);
+      console.log('trainPersonaFlow: Updating confidence...');
+  
+      const brandRef = db.collection('brands').doc(input.brandId);
+      await brandRef.update({ personaConfidence: admin.firestore.FieldValue.increment(5) });
+  
+      return { success: true };
+    }
+);
+
+
+// --- EXPORTED SERVER ACTIONS ---
+
+export async function runBrandFaceAudit(url: string, brandId: string) {
+    console.log('Action: runBrandFaceAudit');
+    return await brandFaceAuditDef({ url, brandId });
+}
+
+export async function runCheckImageSafety(base64: string, mimeType: string) {
+    console.log('Action: runCheckImageSafety');
+    return await checkImageSafetyDef({ base64, mimeType });
+}
+
+export async function runAutoTagImage(url: string) {
+    console.log('Action: runAutoTagImage');
+    return await autoTagImageDef({ url });
+}
+
+export async function trainPersonaFlow(input: { brandId: string, captionText: string, platforms: string[] }) {
+    console.log('Action: trainPersonaFlow', input);
+    try {
+        const res = await trainPersonaFlowDef(input);
+        return res;
+    } catch (e) {
+        console.error('Action Error: trainPersonaFlow', e);
+        throw e;
+    }
+}
+
+export async function generateCaptionFlow(input: { brandId: string, userPrompt: string, platforms: string[] }) {
+    console.log('Action: generateCaptionFlow', input);
+    try {
+        const res = await generateCaptionFlowDef(input);
+        return res;
+    } catch (e) {
+        console.error('Action Error: generateCaptionFlow', e);
+        throw e;
+    }
+}
+
+export async function recordFeedbackFlow(input: { brandId: string, captionText: string, platforms: string[], feedback: 'positive' | 'negative' }) {
+    console.log('Action: recordFeedbackFlow');
+    try {
+        const res = await recordFeedbackFlowDef(input);
+        return res;
+    } catch (e) {
+        console.error('Action Error: recordFeedbackFlow', e);
+        throw e;
+    }
+}
