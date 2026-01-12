@@ -2,6 +2,7 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import { getAI, GoogleAIBackend } from "firebase/ai";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -17,3 +18,4 @@ export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfi
 export const auth = getAuth(app);
 export const firestore = getFirestore(app);
 export const storage = getStorage(app);
+export const ai = getAI(app, { backend: new GoogleAIBackend() });
