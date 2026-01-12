@@ -48,21 +48,22 @@ export function BrandSelector() {
 
   const handleAddBrand = async () => {
     if (!newBrandName.trim()) {
-      toast({
-        variant: 'destructive',
-        title: 'Brand name is required',
-      });
       return;
     }
+    
     setIsSubmitting(true);
     try {
       await addBrand(newBrandName);
+      // Close immediately on success
+      setIsAddDialogOpen(false);
+      
       toast({
         title: 'Brand Added',
         description: `Successfully added "${newBrandName}".`,
       });
+      
+      // Reset form state
       setNewBrandName('');
-      setIsAddDialogOpen(false);
     } catch (error) {
       console.error('Failed to add brand:', error);
       toast({
@@ -100,7 +101,8 @@ export function BrandSelector() {
 
   const handleSelectBrand = (brand: Brand) => {
     if (isEditing) return;
-    setSelectedBrand(brand);
+    // Use setTimeout to allow Dropdown to close and restore focus before heavy state updates
+    setTimeout(() => setSelectedBrand(brand), 0);
   }
 
   return (
@@ -147,7 +149,7 @@ export function BrandSelector() {
              <DropdownMenuLabel className="text-xs text-center text-muted-foreground font-normal">No brands yet.</DropdownMenuLabel>
           )}
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => setIsAddDialogOpen(true)}>
+          <DropdownMenuItem onSelect={() => setTimeout(() => setIsAddDialogOpen(true), 0)}>
             <PlusCircle className="mr-2 h-4 w-4" />
             <span>Add New Brand</span>
           </DropdownMenuItem>
@@ -173,7 +175,12 @@ export function BrandSelector() {
               placeholder="e.g., BrandVision Pro"
               value={newBrandName}
               onChange={(e) => setNewBrandName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleAddBrand()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddBrand();
+                }
+              }}
             />
           </div>
           <DialogFooter>
