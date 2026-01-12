@@ -17,7 +17,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 
 import { type Asset } from '@/lib/types';
 import { ShieldCheck, UserCheck, Tag as TagIcon, Sparkles, Upload, AlertCircle, CheckCircle2, Heart, Info, SlidersHorizontal, Share, Trash2, Cloud, MapPin } from 'lucide-react';
-import { runCheckImageSafety, runAutoTagImage, runBrandFaceAudit } from '@/app/actions/ai';
+import { runCheckImageSafety, runAutoTagImage, runBrandFaceAudit } from '@/ai/personaFlows';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
