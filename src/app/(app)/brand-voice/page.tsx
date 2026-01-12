@@ -88,7 +88,7 @@ function TrainingZone({ brandId }: { brandId: string }) {
         className="mb-4"
       />
       <div className="mb-4">
-        <p className="text-sm font-medium mb-2">Select Platforms:</p>
+        <p className="text-sm font-medium mb-2">Select Platforms (Required):</p>
         <div className="flex flex-wrap gap-2">
           {platforms.map(p => (
             <Button key={p} variant={selectedPlatforms.includes(p) ? 'default' : 'outline'} size="sm" onClick={() => {
@@ -98,7 +98,7 @@ function TrainingZone({ brandId }: { brandId: string }) {
         </div>
       </div>
       <Button onClick={handleTrain} disabled={loading || !caption || selectedPlatforms.length === 0} className="w-full">
-        {loading ? 'Training...' : 'Train AI'}
+         {loading ? 'Training...' : (!caption ? 'Enter a caption to train' : (selectedPlatforms.length === 0 ? 'Select at least one platform' : 'Train AI'))}
       </Button>
     </div>
   );
@@ -156,7 +156,7 @@ function GeneratorModal({ brandId }: { brandId: string }) {
             ))}
           </div>
           <Button onClick={handleGenerate} disabled={loading || !prompt || selectedPlatforms.length === 0} className="w-full">
-            {loading ? 'Generating...' : 'Generate Captions'}
+            {loading ? 'Generating...' : (!prompt ? 'Enter a topic' : (selectedPlatforms.length === 0 ? 'Select at least one platform' : 'Generate Captions'))}
           </Button>
         </div>
         <div className="mt-6 space-y-3">

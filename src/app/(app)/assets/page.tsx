@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 
 import { type Asset } from '@/lib/types';
@@ -150,6 +150,9 @@ export default function AssetsPage() {
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>Upload Asset</DialogTitle>
+                <DialogDescription>
+                  Upload an image to your asset library. We'll automatically check it for safety.
+                </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 pt-4">
                 <div className="space-y-2">
@@ -276,6 +279,12 @@ function AssetDetailDialog({ asset, user, onClose }: AssetDetailProps) {
   return (
     <Dialog open={!!asset} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 gap-0 !rounded-lg overflow-hidden">
+        {/* Hidden accessible title/description */}
+        <DialogTitle className="sr-only">Asset Details</DialogTitle>
+        <DialogDescription className="sr-only">
+          View and manage details for {asset?.name ? String(asset.name) : 'Asset'}
+        </DialogDescription>
+
         <div className="flex-1 bg-black flex items-center justify-center overflow-hidden">
           <img src={asset.url} alt={asset.name} className="max-h-full max-w-full object-contain" />
         </div>
@@ -358,8 +367,8 @@ function InfoPanel({ asset }: { asset: Asset }) {
   return (
     <div className="p-4 space-y-4 max-h-[25vh] overflow-y-auto">
         <div className="text-sm">
-            <p className="font-semibold">{asset.createdAt ? format(asset.createdAt.toDate(), 'eeee') : 'Date unavailable'}</p>
-            <p className="text-muted-foreground">{asset.createdAt ? format(asset.createdAt.toDate(), 'MMM d, yyyy • h:mm a') : 'Time unavailable'}</p>
+            <p className="font-semibold">{asset.createdAt && typeof asset.createdAt.toDate === 'function' ? format(asset.createdAt.toDate(), 'eeee') : 'Date unavailable'}</p>
+            <p className="text-muted-foreground">{asset.createdAt && typeof asset.createdAt.toDate === 'function' ? format(asset.createdAt.toDate(), 'MMM d, yyyy • h:mm a') : 'Time unavailable'}</p>
         </div>
         <div className="flex items-center gap-2 text-muted-foreground text-xs">
             <Cloud className="w-4 h-4" />
@@ -503,7 +512,5 @@ function AIPanel({ asset }: { asset: Asset }) {
     </div>
   );
 }
-
-    
 
     
