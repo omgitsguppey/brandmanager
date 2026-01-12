@@ -2,7 +2,7 @@
 'use client';
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, query, where, Query, addDoc, serverTimestamp, doc, deleteDoc, updateDoc, writeBatch, getDocs } from 'firebase/firestore';
+import { collection, query, where, Query, addDoc, serverTimestamp, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { useUser, useFirestore, useCollection, useStorage } from '@/firebase';
 import { useBrand } from '@/context/brand-context';
@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 
 import { type Asset } from '@/lib/types';
@@ -503,5 +503,7 @@ function AIPanel({ asset }: { asset: Asset }) {
     </div>
   );
 }
+
+    
 
     
