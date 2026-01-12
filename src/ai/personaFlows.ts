@@ -1,18 +1,55 @@
 
 'use server';
 import { ai } from '@/ai/genkit';
-import { type Model } from '@genkit-ai/core';
-import { getFirebaseVectorStore, getFirestore } from '@genkit-ai/firebase';
-import { increment, updateDoc } from 'firebase/firestore';
+import { defineFirestoreRetriever } from '@genkit-ai/firebase';
+import * as admin from 'firebase-admin';
 import { z } from 'zod';
 import { backupModel, embeddingModel, primaryModel } from './genkit';
 
-const personaStore = getFirebaseVectorStore({
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
+const db = admin.firestore();
+
+// Custom personaStore implementation using Genkit 1.x patterns
+const personaRetriever = defineFirestoreRetriever(ai, {
+  name: 'personaRetriever',
+  firestore: db as any,
   collection: 'brand_persona_examples',
+  embedder: embeddingModel,
+  vectorField: 'embedding',
   contentField: 'content',
-  embedder: { model: embeddingModel },
   metadataFields: ['brandId', 'platforms', 'source'],
 });
+
+const personaStore = {
+  add: async (items: any[]) => {
+    const batch = db.batch();
+    for (const item of items) {
+      const embeddings = await ai.embed({
+        embedder: embeddingModel,
+        content: item.content,
+      });
+      const docRef = db.collection('brand_persona_examples').doc();
+      batch.set(docRef, {
+        ...item,
+        embedding: embeddings[0].embedding,
+      });
+    }
+    await batch.commit();
+  },
+  retrieve: async (params: { content: string; k?: number; filter?: any }) => {
+    const result = await ai.retrieve({
+      retriever: personaRetriever,
+      query: params.content,
+      options: {
+        limit: params.k,
+        where: params.filter?.where === 'metadata.brandId' ? { brandId: params.filter.value } : undefined,
+      },
+    });
+    return result.map(doc => ({ content: doc.text }));
+  },
+};
 
 const trainPersonaFlowInput = z.object({
   brandId: z.string(),
@@ -30,17 +67,14 @@ export const trainPersonaFlow = ai.defineFlow(
     await personaStore.add([
       {
         content: input.captionText,
-        metadata: {
-          brandId: input.brandId,
-          platforms: input.platforms,
-          source: 'manual_input',
-        },
+        brandId: input.brandId,
+        platforms: input.platforms,
+        source: 'manual_input',
       },
     ]);
 
-    const db = getFirestore();
     const brandRef = db.collection('brands').doc(input.brandId);
-    await updateDoc(brandRef, { personaConfidence: increment(5) });
+    await brandRef.update({ personaConfidence: admin.firestore.FieldValue.increment(5) });
 
     return { success: true };
   }
@@ -49,6 +83,7 @@ export const trainPersonaFlow = ai.defineFlow(
 const captionPrompt = ai.definePrompt(
   {
     name: 'captionPrompt',
+    model: primaryModel,
     input: {
       schema: z.object({
         platforms: z.array(z.string()),
@@ -57,42 +92,21 @@ const captionPrompt = ai.definePrompt(
       }),
     },
     output: {
-      schema: z
-        .object({
-          captions: z
-            .array(z.string())
-            .describe('An array of 3 distinct social media caption options.'),
-        })
-        .describe('The required JSON output structure.'),
+      format: 'json',
+      schema: z.object({
+        captions: z.array(z.string()).describe('An array of 3 distinct social media caption options.'),
+      }),
     },
     prompt: `
-    You are an expert social media manager. Your task is to generate captions for the social media platforms: {{{platforms}}}.
+    You are an expert social media manager. Your task is to generate captions for the social media platforms: {{platforms}}.
     Your response must be a valid JSON object with a single key "captions" which is an array of strings, like {"captions": ["caption 1", "caption 2"]}.
     Do not wrap the JSON in markdown backticks.
 
     First, study these high-quality examples of the brand's voice:
-    {{{examples}}}
+    {{examples}}
 
-    Now, based on that voice, write 3 distinct caption options about the following topic: "{{{userPrompt}}}"
+    Now, based on that voice, write 3 distinct caption options about the following topic: "{{userPrompt}}"
   `,
-    config: {
-      output: { format: 'json' },
-    },
-  },
-  async (input) => {
-    const generate = async (model: Model) => {
-      const llmResponse = await model.generate({
-        prompt: { ...input },
-      });
-      return llmResponse.output() as { captions: string[] };
-    };
-
-    try {
-      return await generate(primaryModel);
-    } catch (e) {
-      console.error('Primary model failed, trying backup model.', e);
-      return await generate(backupModel);
-    }
   }
 );
 
@@ -112,7 +126,7 @@ export const generateCaptionFlow = ai.defineFlow(
     const similarDocs = await personaStore.retrieve({
       content: input.userPrompt,
       k: 3,
-      filter: { where: 'metadata.brandId', is: '==', value: input.brandId },
+      filter: { where: 'metadata.brandId', value: input.brandId },
     });
 
     const examples = similarDocs.map((doc: any) => doc.content).join('\n---\n');
@@ -123,7 +137,7 @@ export const generateCaptionFlow = ai.defineFlow(
       userPrompt: input.userPrompt,
     });
     
-    return result || { captions: [] };
+    return result.output || { captions: [] };
   }
 );
 
@@ -141,23 +155,20 @@ export const recordFeedbackFlow = ai.defineFlow(
     outputSchema: z.object({ success: z.boolean() }),
   },
   async (input) => {
-    const db = getFirestore();
     const brandRef = db.collection('brands').doc(input.brandId);
 
     if (input.feedback === 'positive') {
       await personaStore.add([
         {
           content: input.captionText,
-          metadata: {
-            brandId: input.brandId,
-            platforms: input.platforms,
-            source: 'generated_positive_feedback',
-          },
+          brandId: input.brandId,
+          platforms: input.platforms,
+          source: 'generated_positive_feedback',
         },
       ]);
-      await updateDoc(brandRef, { personaConfidence: increment(2) });
+      await brandRef.update({ personaConfidence: admin.firestore.FieldValue.increment(2) });
     } else {
-      await updateDoc(brandRef, { personaConfidence: increment(-2) });
+      await brandRef.update({ personaConfidence: admin.firestore.FieldValue.increment(-2) });
     }
 
     return { success: true };
