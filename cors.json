@@ -1,0 +1,16 @@
+[
+  {
+    "origin": [
+      "http://localhost:3000",
+      "http://localhost:9000",
+      "http://localhost:9002",
+      "http://localhost:9003",
+      "https://studio-5842299701-a979b.firebaseapp.com",
+      "https://studio-5842299701-a979b.web.app",
+      "https://studio--studio-5842299701-a979b.us-central1.hosted.app"
+    ],
+    "method": ["GET", "PUT", "POST", "DELETE", "HEAD", "OPTIONS"],
+    "responseHeader": ["Content-Type", "x-goog-resumable", "x-firebase-storage-version", "x-goog-meta-brandId"],
+    "maxAgeSeconds": 3600
+  }
+]
